@@ -1,0 +1,366 @@
+% Template for ICIP-2022 paper; to be used with:
+%          spconf.sty  - ICASSP/ICIP LaTeX style file, and
+%          IEEEbib.bst - IEEE bibliography style file.
+% --------------------------------------------------------------------------
+\documentclass{article}
+\usepackage{spconf,amsmath,graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{adjustbox}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+
+
+% Example definitions.
+% --------------------
+\def\x{{\mathbf x}}
+\def\L{{\cal L}}
+
+% Title.
+% ------
+\title{Affinity Enhanced Image-specific Prototypes for \\Weakly Supervised Semantic Segmentation}
+%
+% Single address.
+% ---------------
+\name{Jungsun Im, Subin An, Soochahn Lee\thanks{This work was supported by the National Research Foundation of Korea(NRF) grant funded by the Korea government(MSIT) (NRF-2021R1A2C2095452).}}
+\address{Dept. of Electronics Engineering, Kookmin University, Seoul, Korea
+}
+%
+% For example:
+% ------------
+%\address{School\\
+%	Department\\
+%	Address}
+%
+% Two addresses (uncomment and modify for two-address case).
+% ----------------------------------------------------------
+%\twoauthors
+%  {A. Author-one, B. Author-two\sthanks{Thanks to XYZ agency for funding.}}
+%	{School A-B\\
+%	Department A-B\\
+%	Address A-B}
+%  {C. Author-three, D. Author-four\sthanks{The fourth author performed the work
+%	while at ...}}
+%	{School C-D\\
+%	Department C-D\\
+%	Address C-D}
+%
+\begin{document}
+%\ninept
+%
+\maketitle
+%
+\begin{abstract} 
+Many weakly supervised semantic segmentation methods rely on the pixel-level features extracted from networks trained for image classification. 
+These features can be used to create class activation maps for semantic scores, define pixel affinity as feature similarities, and construct per-class feature prototypes based on feature clustering. 
+This paper proposes a method that enhances previous works by incorporating affinity-based refinement into the generation of image-specific per-class prototypes, resulting in significantly improved representative strength. 
+These prototypes then lead to improved pseudo-labels, ultimately improving segmentations. 
+Experimental results show significant improvements compared to baseline methods, and are on par with recent state-of-the-art methods.
+The code is available at \href{https://github.com/IJS1016/AE_SIPE}{\url{https://github.com/IJS1016/AE_SIPE}}
+% The pixel-level features from networks trained for image classification are the basis of many weakly supervised semantic segmentation methods. 
+% Semantic scores can be derived to comprise class activation maps, pixel affinity can be defined as feature similarities, and per-class feature prototypes can be constructed from feature clustering.
+% In this paper, we propose a method that combines and enhances previous works based on pixel affinity and feature prototypes.
+% We incorporate affinity based refinement into the generation of image-specific per-class prototypes, which greatly improves their representative strength.
+% These prototypes consequently lead to improved psuedo-labels, ultimately resulting in improved segmentations. 
+% Experimental results demonstrate the substantial improvements compared to the baseline methods and on par with the recent state-of-the-art methods.
+
+\end{abstract}
+%
+\begin{keywords}
+weakly supervised semantic segmentation, affinity enhancement, prototype exploration, self-supervised learning, image-specific
+\end{keywords}
+%
+\section{Introduction}
+\label{sec:intro}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{teaser.pdf}
+   \caption{We enhance pixel-level affinity when generating image-specific CAM (IS-CAM) within the self-supervised image-specific prototype exploration (SIPE)~\cite{SIPE}.}
+   \label{fig:teaser}
+\end{figure}
+
+% introduction to problem
+The goal of weakly supervised semantic segmentation (WSSS) is to learn how to generate pixel-level labels from limited supervision, usually in the form of image-level class labels~\cite{Hong_SigProcMag}. 
+The introduction of the Class Activation Map (CAM)~\cite{CAM} was a significant advancement towards achieving this goal, as it provides a means of generating pixel-level per-class scores based on image classification.
+However, it has been observed that meaningful CAM scores are often only assigned to a selective number of the most discriminative pixels, leading to limitations in directly using CAM as a segmentation solution.
+
+\begin{figure*}[htb]
+  \centering
+  \centerline{\includegraphics[width=\linewidth]{overview2.pdf}}
+\caption{Visual summary of the proposed method. We build upon the previous framework of self-supervised image-specific prototype exploration (SIPE) method~\cite{SIPE} to enhance prototypes based on affinity using pixel-adaptive mask refinement (PAMR)~\cite{PAMR}, leading to substantial improvements in quantitative evaluations.}
+\label{fig:overview}
+\end{figure*}
+
+% previous works - improving CAM
+Nonetheless, CAM proves to be a highly efficient technique for utilizing image-level annotations to make pixel-level predictions. 
+It has frequently served as a base upon which multiple methods have been proposed to enhance and optimize the acquisition of pixel-level class probabilities.
+
+%Many works have been proposed to improve the spatial distribution of CAM scores. 
+% mining: adversarial erasing, DRS
+One approach is to erase~\cite{AE} or suppress~\cite{DRS} the more discriminative regions, further mine discriminative pixels.
+% to enhance the distributions of class activations. 
+% local consistency: Seed-expand, 
+Another approach is to assign the limited discriminative regions as seeds and expand them into full segmentation labels using conventional region growing algorithms~\cite{SeedExpand,DSRG}, based on the similarities of local pixel values.
+Further methods extended this approach by incorporating pixel adaptive refinement~\cite{PAMR}, random walks on semantic features~\cite{AffinityNet}, or multitask inference of displacement and class boundary~\cite{AffinityNet,IRN}.
+
+% self-supervision: SEAM, PPC, SIPE
+Many recent methods are based on self-supervised learning. A contrastive learning framework, with positive image pairs defined by pairing an image with its linear transform and negative pairs of different images, were applied in \cite{SEAM,PPC}. Another approach uses network features to create a per-class feature prototype-based alternative score map, providing supervision to guide the network towards generating consistent features with pixel affinities and image-level class labels.~\cite{SIPE}. 
+
+% WSSS pipeline
+Combining these methods with others has shown benefits, as seen in recent works~\cite{SEAM,PPC,SIPE}. The improved CAM-like score maps generated by these methods are used to enhance pixel affinities and generate pseudo-labels~\cite{CRF,IRN}, which are used to train a fully supervised semantic segmentation network~\cite{DeepLabv2}.
+% Almost all the aforementioned methods benefit from combining with other methods. 
+% In many recent methods the output in the form of an improved CAM is fed into methods to enhance pixel affinities, after which the constructed psuedo-labels are used to train a fully supervised semantic segmentation network~\cite{DeepLabv2}.
+
+
+
+% proposed method
+% In this paper, we propose a method that extends and combines previous works, so that pixel affinity is maximized when learning self-supervised prototype-based pixel-level class score maps. Namely, we propose a method to incorporate pixel-adaptive mask refinement (PAMR)~\cite{PAMR} when generating score maps within the self-supervised image-specific prototype exploration (SIPE) method~\cite{SIPE}. Experimental results demonstrate that our proposed method We also propose further modifications that improve 
+In this paper, we propose a method to incorporate pixel-adaptive mask refinement (PAMR)~\cite{PAMR} so that pixel affinity is maximized when generating score maps within the self-supervised image-specific prototype exploration (SIPE) method~\cite{SIPE}. 
+Experimental results demonstrate that our proposed method provides substantial improvements over the baseline method SIPE. 
+We also propose additional modifications that further improves quantitative results.
+
+
+\section{Proposed Method}
+\label{sec:method}
+
+\subsection{Framework}
+\label{sec:overview}
+
+A visual summary of the proposed method is presented in Fig.~\ref{fig:overview}. 
+The baseline method, SIPE~\cite{SIPE}, comprises 1) the encoder module which generates pixel-level features, 2) the image classification module, which provides image-level supervision and generates the CAM, 3) the structure analysis module, which generates semantic structure seeds, and 4) the prototype module, which generates image-specific per-class prototype features and pixel-level per-class scores, denoted as image-specific CAM (IS-CAM). We note that we are using our own terminology, which we believe provides a more intuitive understanding of the framework.
+
+In the proposed method, we incorporate 5) the affinity enhancement (AE) module to the framework. 
+In the AE module, a refined IS-CAM is generated, which is then used to generate refined region seeds, which are used to refine the prototypes and generate an improved IS-CAM. 
+
+To aid the description of the AE module in \ref{sec:ae}, we provide a brief summary of the modules of SIPE~\cite{SIPE} as follows:
+\noindent
+{\bf {Encoder}} comprises a backbone CNN, pre-trained on image classification. 
+The feature tensor generated from this encoder $\mathcal{E}$ for the input image $\mathcal {I}$ is denoted as $\mathcal {F} = \mathcal {E}(\mathcal {I})$, and each feature vector at grid coordinate ${(i,j)}$ as $f_{ij}$. 
+
+\noindent
+{\bf {Classification}} comprises a layer to compute the CAM, and the global average pooling layer to connect the CAM with the image-level supervision through the classification loss.
+%follows recent advances to incorporate reordering of global average pooling~\cite{} and background estimation~\cite{}. 
+
+\noindent
+{\bf {Structure analysis}} relates the spatial distribution of features to the CAM in order to create seeds for prototypes. The pixel-wise spatial structure of grid coordinate ${(i,j)}$ is first defined as $S_{ij} = {\text {ReLU}}(Sc(f_{ij},\mathcal {F}))$, with the cosine similarity function $Sc(\cdot)$ being broadcast for the elements of $\mathcal {F}$. 
+This is then compared to CAM to determine the semantic structure seed label, $SS_{ij} = \arg \max_{k} {{\text {IoU}} (S_{ij}, {\mathcal {M}}^{k})}$ denoting intersection-over-union with the CAM ${\mathcal {M}}^{k}$ for the $k_{th}$ class. 
+
+\noindent
+{\bf {Prototypes}} $p^{k}$ are generated as $p^{k} = {{1} \over {|\mathcal {S}^{k}|}} \sum_{(i,j) \in \mathcal{S}^{k}} {f_{ij}} $, where 
+$\mathcal {S}^{k} = \{ (i,j) | SS_{ij} == k \}$ denotes the set of coordinates with $SS_{ij} == k$. That is, $p^{k}$ is the mean of the features with seed label k. The IS-CAM ${\tilde {\mathcal {M}}}^{k}$ is defined as ${\tilde {\mathcal {M}}}^{k}_{ij} = {\text {ReLU}}(Sc(f_{ij}, p^{k}))$.
+
+\noindent
+{\bf {Training loss}} comprises the classification loss, defined as the cross-entropy between ground truth and the inferred image-level labels, and the general-specific consistency (GSC) loss, defined as the pixel-level $L1$ distance between the initial CAM ${\mathcal {M}}^{k}$ and refined IS-CAM ${\tilde {\mathcal {M}}}^{k}$, for all classes $k$.
+
+\subsection{Affinity Enhanced Image-specific CAM}
+\label{sec:ae}
+
+Within the AE module, PAMR~\cite{PAMR}, which is essentially bilateral filtering~\cite{BilateralFil} on the semantic labels, is applied to the refined IS-CAM ${\tilde {\mathcal {M}}}^{k}$. 
+PAMR is defined as follows: 
+\begin{equation}
+    \text{PAMR}({\tilde {\mathcal {M}}}^{k}_{ij}) = \sum_{(p,q) \in \mathcal{N}} {\alpha_{ij,pq}{\tilde {\mathcal {M}}}^{k}_{pq}},
+\end{equation}
+where the affinity kernel $\alpha_{pq}$ is a function based on the differences in image pixel values
+$\alpha_{ij,pq} = {1 \over W}exp\left(-{{||I_{ij}-I_{pq}||_{2}}\over{\sigma^{2}}}\right)$, with a normalization term $W$ ensuring that $\sum_{(p,q) \in \mathcal{N}} {\alpha_{pq}} = 1$. $\mathcal N$ denotes the local neighborhood of $(i,j)$, which is defined as a combination of multiple $3 \times 3$ windows with varying dilation rates.
+
+The further refined CAM ${\hat {\mathcal {M}}}^{k}_{ij}$ is obtained by iteratively applying PAMR $n$ times, as ${\hat {\mathcal {M}}}^{k}_{ij} = \text{PAMR}^{n}({\tilde {\mathcal {M}}}^{k}_{ij})$. Using ${\hat {\mathcal {M}}}^{k}_{ij}$, we redefine seed labels as ${\hat {SS}}_{ij} = \arg \max_{k} {{\hat {\mathcal {M}}}^{k}_{ij}}$ to compute AE prototypes as 
+${\hat {p}}^{k} = {{1} \over {|\mathcal {{\hat {S}}^{k}}|}} \sum_{(i,j) \in \mathcal{\hat {S}}^{k}} {f_{ij}} $, where $\mathcal {\hat {S}}^{k} = \{ (i,j) | {\hat {SS}}_{ij} == k \}$. The final affinity enhanced IS-CAM, which we term AE-IS-CAM, is computed as ${\check {\mathcal {M}}}^{k}_{ij} = {\text {ReLU}}(Sc(f_{ij}, {\hat p}^{k}))$. Examples that highlight the improvements from $\mathcal {S}^{k}$ to $\mathcal {\hat {S}}^{k}$ and from ${\tilde {\mathcal {M}}}^{k}$ to ${\check {\mathcal {M}}}^{k}$ are depicted in Fig.~\ref{fig:teaser}.
+
+\subsection{Additional Modifications}
+\label{sec:sipe}
+
+We also apply further minor modifications regarding the details of encoded features, normalization of refined (AE) IS-CAM, and rescaling of background scores. 
+We observed these modifications result in small improvements in the quantitative evaluations.
+
+\noindent
+{\bf Structure analysis with hierarchical features:} In SIPE~\cite{SIPE}, only features from the last layer (\emph{semantic} features) are used in structure analysis, while the concatenation of projected features generated from all internal layers (\emph{hierarchical} features) are used in prototype and IS-CAM generation.
+However, we use hierarchical features for structure analysis as well as prototype, IS-CAM, and AE-IS-CAM generation.
+
+\noindent
+{\bf IS-CAM normalization:} As the cosine similarities between features and prototypes may not range from the full range of $[0,1]$, we apply min-max normalization on the AE-IS-CAM. 
+
+\noindent
+{\bf Rescaling of background scores:} We observed background scores to be generally higher than the foreground class, as background regions may be more diverse in appearance. We thus rescale the background class activations by a factor of $0.8$.
+
+\section{Experiments}
+\label{sec:exp}
+
+\subsection{Experimental Settings}
+\label{sec:impl}
+
+\noindent
+{\bf Implementation:}
+Experiments were performed on two Titan RTX GPUs with implementation based on the source code provided by the authors of \cite{SIPE}, which is in turn based on PyTorch. We use a pre-trained ResNet-101~\cite{ResNet} as the backbone network in the encoder module. Training was performed by standard SGD optimization with momentum 0.9 and weight decay 1e-4. The learning rate was set to 1e-2 for the pre-trained layers and 1e-1 for the layers in feature concatenation and the final classification layer.
+The PAMR process was iterated for $n=10$ times, and a set of $\{1,2,4,8,12,24\}$ dilation rates were used to define $\mathcal N$. 
+
+\noindent
+{\bf Multi-stage pipeline:}
+The full segmentation pipeline comprised the 1) the proposed method to construct initial pseudo labels, 2) the IRN~\cite{IRN} to refine the initial pseudo labels, 3) and the DeepLabV3~\cite{DeepLabv3} which is trained using the refined pseudo labels.
+
+\noindent
+{\bf Dataset:}
+we employ the PASCAL VOC 2012 segmentation dataset, widely recognized as the standard benchmark for WSSS. This dataset includes 21 classes, including the background, and comprises 1,464, 1,449, and 1,456 images for the train, validation, and test sets, respectively. To enhance the training process, we use the augmented train set, which comprises 10,582 images~\cite{VOCAugTrain}. Performance is measured by mIoU. The mIoU score on the VOC test set through the official evaluation server.
+
+\subsection{Comparative Evaluation}
+\label{sec:comp}
+
+%------------------------------------
+\begin{table}
+%\begin{minipage}[c]{0.5\textwidth}
+\centering
+\caption{Comparative evaluation of proposed AE-SIPE with SOTA on PASCAL VOC 2012 dataset. Models that rely only on image-level supervision are included for fair comparison. Numbers in red denote improvement over the baseline.} 
+\begin{tabular}{c  c  c  c  c }
+\toprule%\hline\hline 
+Model & Pub. & Backbone & Val & Test \\
+\midrule%\hline%\hline
+SSWS~\cite{PAMR} & {\scriptsize{CVPR'20}} & \scriptsize{Exception65} & Val & Test \\
+SEAM~\cite{SEAM} & {\scriptsize{CVPR'20}} & \scriptsize{ResNet38} & 64.5 & 65.7 \\
+AdvCAM~\cite{AdvCAM} & {\scriptsize{CVPR'21}} & \scriptsize{ResNet101} & 68.1 & 68.0 \\
+CSE~\cite{CSE}  & {\scriptsize{ICCV'21}} & \scriptsize{ResNet38} & 68.4 & 68.2 \\
+CPN~\cite{CPN} & {\scriptsize{ICCV'21}} & \scriptsize{ResNet38} & 67.8 & 68.5 \\
+PPC~\cite{PPC} & {\scriptsize{CVPR'22}} & \scriptsize{ResNet38} & 67.7 & 67.4 \\ 
+AMN~\cite{AMN} & {\scriptsize{CVPR'22}} & \scriptsize{ResNet101} & 69.5 & 69.6 \\ 
+RecurSeed~\cite{RecurSeed} & {\scriptsize{ArXiv'22}} & \scriptsize{ResNet101} & 72.8 & 72.8 \\
+SIPE~\cite{SIPE} & {\scriptsize{CVPR'22}} & \scriptsize{ResNet38} & 68.2 & 69.5 \\
+SIPE~\cite{SIPE} & {\scriptsize{CVPR'22}} & \scriptsize{ResNet101} & 68.8 & 69.7 \\
+AE-SIPE & {\scriptsize{Proposed}} & \scriptsize{ResNet101} & 71.0{\scriptsize{\textcolor{red}{+2.2}}} & 71.1{\scriptsize{\textcolor{red}{+1.4}}} \\
+\bottomrule%\hline
+\end{tabular}
+\label{tbl:quant}
+%\end{minipage}
+\end{table}
+
+Quantitative evaluation results are presented in Table~\ref{tbl:quant}. 
+The addition of the AE module together with the modifications contribute to $2.2\%$ and $1.4\%$ point improvements upon the baseline~\cite{SIPE} on the \emph{val} set and \emph{test} set, respectively. 
+
+Qualitative comparisons with the baseline are provided in Figs.~\ref{fig:teaser} and \ref{fig:comp_qual}. 
+The examples depict instances where the proposed method generates better segmentations by better distinguishing the background, as well as the semantic class of foreground objects.
+
+\begin{figure*}[htb]
+  \centering
+  \centerline{\includegraphics[width=0.74\linewidth]{labels.pdf}}
+\caption{Qualitative results of segmentation labels for sample images of the PASCAL VOC 2012 dataset for the baseline SIPE~\cite{SIPE} and the proposed method.}
+\label{fig:comp_qual}
+\end{figure*}
+
+
+%------------------------------------
+\begin{table}[htb]
+%\begin{minipage}[c]{0.5\textwidth}
+\centering
+\caption{Ablation performance (mIoU \%) of the baseline IS-CAM and AE-IS-CAM of the proposed method on the PASCAL VOC 2012 \emph {train} set, refined by \cite{CRF}.} 
+\begin{tabular}{c  c  c }
+\toprule%\hline\hline 
+Module & Train & Train+CRF~\cite{CRF} \\
+\midrule%\hline%\hline
+Baseline~\cite{SIPE} & 58.6 & 64.7\\
++Affinity Enhancement & 64.2 & 66.6\\
++Hierarchical Features & 65.4 & 66.9\\
++IS-CAM Normalization & 65.4 & 66.9\\
++Background rescaling  &65.8 & 67.8\\
+\bottomrule%\hline
+\end{tabular}
+\label{tbl:abl}
+%\end{minipage}
+\end{table}
+
+%------------------------------------
+
+\begin{table}[htb]
+%\begin{minipage}[c]{0.5\textwidth}
+\centering
+\caption{Comparison of various combinations of PAMR, prototype (Pr) and IS-CAM (IS) comprising affinity enhancement (AE) on the PASCAL VOC 2012 \emph {train} set, refined by \cite{CRF}.} 
+\begin{tabular}{c  c  c }
+\toprule%\hline\hline 
+Module & Train & Train+CRF~\cite{CRF} \\
+\midrule%\hline%\hline
+(Pr, IS) (Baseline~\cite{SIPE}) & 58.6 & 64.7\\
+Baseline+(Pr, IS) & 59.5 & 65.1\\
+Baseline+(Pr, IS, PAMR, Pr, IS) & 56.6	& 58.7 \\
+Baseline+(PAMR, Pr, IS, Pr, IS) & 62.3 & 65.4\\
+Baseline+(PAMR, Pr, IS) (\textbf{AE}) & 64.2 & 66.6\\
+\bottomrule%\hline
+\end{tabular}
+\label{tbl:var}
+%\end{minipage}
+\end{table}
+
+\subsection{Ablative Study}
+\label{sec:ablation}
+
+Here, we present the particular effect of each of the proposed parts, namely, the AE, structure analysis with hierarchical features (HF), IS-CAM normalization, and background rescaling as ablative analysis, in Table~\ref{tbl:abl}. 
+We observe that most of the improvements stems from the AE, with small improvements from the additional modifications.
+
+
+We also present results of different combinations PAMR, prototype generation, and IS-CAM generation, which comprise the submodules of the AE module, in Table~\ref{tbl:var}. We found that iterations of PAMR or prototype and IS-CAM generation did not consistently result in improvements, and that the best results were acheived through the proposed AE. 
+
+
+
+\section{Discussion}
+\label{sec:discussion}
+
+In the comparative evaluation in Table~\ref{tbl:quant}, it is shown that the RecurSeed method~\cite{RecurSeed} achieves the highest performance. 
+This method happens to apply PAMR~\cite{PAMR} to refine pseudo-labels as well, together with a module for \emph{self-correlation map generation} (SCG)~\cite{SCG}. 
+Coincidentally, this SCG process, originally proposed for weakly supervised object localization, is very similar to the structure analysis module in SIPE~\cite{SIPE}.
+
+Upon further comparison, we observed that while prototypes are used to generate the pseudo semantic segmentation labels in the proposed AE-SIPE, a decoder is used to infer the pseudo-labels in RecurSeed. 
+And while iterations improve results in RecurSeed, it did not in the proposed method. 
+
+We believe that the prototype approach has the advantage of simplicity, while the decoder approach may have the advantage of capacity. 
+There have been relatively few works that explicitly address the decoder structure within the self-supervised framework for WSSS, thus warranting further research.
+We also hope to better identify refinement processes that can be iterated for further improvements.
+
+
+
+
+
+
+
+
+% % Below is an example of how to insert images. Delete the ``\vspace'' line,
+% % uncomment the preceding line ``\centerline...'' and replace ``imageX.ps''
+% % with a suitable PostScript file name.
+% % -------------------------------------------------------------------------
+% \begin{figure}[htb]
+
+% \begin{minipage}[b]{1.0\linewidth}
+%   \centering
+%   \centerline{\includegraphics[width=8.5cm]{image1}}
+% %  \vspace{2.0cm}
+%   \centerline{(a) Result 1}\medskip
+% \end{minipage}
+% %
+% \begin{minipage}[b]{.48\linewidth}
+%   \centering
+%   \centerline{\includegraphics[width=4.0cm]{image3}}
+% %  \vspace{1.5cm}
+%   \centerline{(b) Results 3}\medskip
+% \end{minipage}
+% \hfill
+% \begin{minipage}[b]{0.48\linewidth}
+%   \centering
+%   \centerline{\includegraphics[width=4.0cm]{image4}}
+% %  \vspace{1.5cm}
+%   \centerline{(c) Result 4}\medskip
+% \end{minipage}
+% %
+% \caption{Example of placing a figure with experimental results.}
+% \label{fig:res}
+% %
+% \end{figure}
+
+
+
+\vfill\pagebreak
+
+% References should be produced using the bibtex program from suitable
+% BiBTeX files (here: strings, refs, manuals). The IEEEbib.bst bibliography
+% style file from IEEE produces unsorted bibliography list.
+% -------------------------------------------------------------------------
+\bibliographystyle{IEEEbib}
+\bibliography{refs}
+
+\end{document}
